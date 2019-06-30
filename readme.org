@@ -1,0 +1,79 @@
+#+TITLE: readme
+* Setup
+#+BEGIN_SRC sh
+stack new yesod-boilerplate yesodweb/postgres
+#+END_SRC
+* nix-shell
+since I am using ~nixos~ I shall use nix to manage my packages instead of stack
+or cabal.
+Using nix has the advantage of sharing stack dependencies. By default stack
+would pull a new copy of the same packages for different projects.
+** Add to stack.yaml
+#+BEGIN_SRC yaml
+nix:
+  enable: true
+  shell-file: shell.nix
+#+END_SRC
+** Generate shell.nix
+#+BEGIN_SRC sh
+cabal2nix . > yesod-boilerplate.nix
+#+END_SRC
+Then pull out the packages required from ~yesod-boilerplate.nix~
+#+BEGIN_SRC nix :tangle shell.nix
+{ nixpkgs ? import <nixpkgs> {}, compiler ? "ghc865" }:
+
+let
+  inherit (nixpkgs) pkgs;
+  #final01 = import ./default.nix {};
+  ghc = pkgs.haskell.packages.${compiler}.ghcWithPackages (ps: with ps; [
+    aeson base bytestring case-insensitive classy-prelude
+    classy-prelude-conduit classy-prelude-yesod conduit containers
+    data-default directory fast-logger file-embed foreign-store hjsmin
+    http-client-tls http-conduit monad-control monad-logger persistent
+    persistent-postgresql persistent-template safe shakespeare
+    template-haskell text time unordered-containers vector wai
+    wai-extra wai-logger warp yaml yesod yesod-auth yesod-core
+    yesod-form yesod-static
+    markdown
+    yesod-text-markdown
+  ]);
+  systemPackages = with pkgs; [
+    # add whatever system packages you want.
+    binutils
+    gcc
+    ghc
+
+    postgresql
+    zlib
+    zlib.dev
+  ];
+in
+  pkgs.stdenv.mkDerivation {
+    name = "yesod-boilerplate";
+    buildInputs = [ ghc systemPackages ];
+    shellHook = ''
+      eval $(egrep ^export ${ghc}/bin/ghc)
+    '';
+}
+#+END_SRC
+** Database Migrations
+We then need to setup our database, I use nix to generate a postgresql db for me
+#+BEGIN_SRC nix
+services.postgresql = {
+  enable = true;
+  package = pkgs.postgresql;
+  enableTCPIP = true;
+  authentication = pkgs.lib.mkOverride 10 ''
+    local all all trust
+    host all all ::1/128 trust
+  '';
+  initialScript = pkgs.writeText "backend-initScript" ''
+    CREATE ROLE detentionbarracksuser WITH LOGIN PASSWORD 'detentionbarrackspassword' CREATEDB;
+    CREATE DATABASE detensionBarracks;
+    GRANT ALL PRIVILEGES ON DATABASE detensionbarracks TO detentionbarracksuser;
+  '';
+};
+#+END_SRC
+Then we need to edit ~./config/settings.yml~ to reflect the correct db settings
+
+Now we are ready to begin!
